@@ -1,5 +1,3 @@
-"""API publica de la libreria."""
-
 from .des_core import des_block
 from .key_schedule import des_check_parity, des_key_schedule
 

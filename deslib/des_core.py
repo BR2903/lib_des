@@ -6,15 +6,6 @@ from .tables import IP, IP_INV
 
 
 def des_block(block: int, subkeys: list) -> int:
-    """Bloque de 64 bits -> 64 bits.
-
-    Cifra o descifra segun el orden de las subkeys: la estructura Feistel es
-    identica en ambos sentidos, no hace falta invertir f.
-
-    Orden: IP -> 16 rondas -> R16||L16 -> IP^-1. El intercambio final (R
-    antes que L al concatenar) es imprescindible; sin el, el descifrado no
-    recupera el plaintext.
-    """
     if len(subkeys) != 16:
         raise ValueError(f"hacen falta 16 subkeys, llegaron {len(subkeys)}")
 
