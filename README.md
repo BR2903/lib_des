@@ -1,158 +1,195 @@
-# deslib
+# lib_des
 
 Implementación de **DES (Data Encryption Standard)** en Python puro, escrita
-desde la especificación FIPS PUB 46-3.
-
-Lab 1 de Cryptography (ECMC) — Yachay Tech University.
+desde la especificación **FIPS PUB 46-3**.
 
 No se usa ninguna librería criptográfica. Las permutaciones, las S-boxes, el
-key schedule, la función de Feistel y las 16 rondas están implementados desde
-la especificación.
+key schedule, la función de Feistel y las 16 rondas están implementadas a mano.
+
+Lab 1 de Cryptography — Yachay Tech University, ECMC.
+
+> ⚠️ Proyecto didáctico. DES está obsoleto y no debe usarse para proteger
+> información real. Ver [Limitaciones](#limitaciones).
 
 ## Requisitos
 
-- Python 3.11+
-- `pytest` solo para los tests
-
-La librería no tiene dependencias externas.
+- Python 3.11 o superior
+- Sin dependencias de ejecución
+- `pytest` solo para correr los tests
 
 ## Instalación
 
+El package aún no es instalable con `pip`. Hay que clonarlo y trabajar desde la
+raíz del repositorio:
+
 ```bash
-git clone <URL-DEL-REPO>
-cd <carpeta>
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
-pip install pytest
+git clone https://github.com/BR2903/lib_des.git
+cd lib_des
+```
+
+El `cd` es necesario: Python encuentra el package porque el directorio actual
+está en `sys.path`. Desde cualquier otra carpeta, `import des` falla.
+
+En Google Colab:
+
+```python
+!git clone https://github.com/BR2903/lib_des.git
+%cd lib_des
 ```
 
 ## Uso
 
 ```python
-from deslib import des_encrypt_block, des_decrypt_block
+from des import cifrar_mensaje, descifrar_mensaje
 
-key = bytes.fromhex("133457799BBCDFF1")
-pt  = bytes.fromhex("0123456789ABCDEF")
+c = cifrar_mensaje("hola me llamo bryan", "holacomo")
+print(c.hex().upper())
+# 1BA668758DBE148D54F36B8D37E03AA9FE23947296533C82
 
-ct = des_encrypt_block(key, pt)
-print(ct.hex().upper())                    # 85E813540F0AB405
-print(des_decrypt_block(key, ct) == pt)    # True
+print(descifrar_mensaje(c, "holacomo"))
+# hola me llamo bryan
 ```
 
-La key y el bloque deben medir **exactamente 8 bytes**. Cualquier otra longitud
-lanza `ValueError`.
+La key debe ocupar **exactamente 8 bytes**.
 
-### API pública
+El resultado de `cifrar_mensaje` son bytes arbitrarios, no texto. No intentes
+decodificarlo: para mostrarlo o guardarlo usa `.hex()` o base64.
 
-| Función | Descripción |
-|---|---|
-| `des_encrypt_block(key, plaintext)` | Cifra un bloque de 8 bytes |
-| `des_decrypt_block(key, ciphertext)` | Descifra un bloque de 8 bytes |
-| `des_key_schedule(key)` | Devuelve las 16 subkeys de 48 bits |
-| `des_check_parity(key)` | `True` si cada byte tiene paridad impar |
+### Cifrado de un solo bloque
 
-También se exponen los componentes internos para inspección y pruebas:
-`permute`, `rotate_left28`, `sbox_lookup`, `substitute`, `feistel_f`,
-`des_round` y `des_block`.
+Para operar directamente sobre un bloque de 64 bits, sin padding:
 
 ```python
-from deslib import des_key_schedule, sbox_lookup
+from des import generar_subkeys, cifrar_bloque, a_binario, de_binario
 
-subkeys = des_key_schedule(key)
-print(f"{subkeys[0]:012X}")        # 1B02EFFC7072
-print(sbox_lookup(0, 0b100101))    # 8
+subkeys = generar_subkeys(bytes.fromhex("133457799BBCDFF1"))
+bloque = a_binario(bytes.fromhex("0123456789ABCDEF"))
+
+cifrado = cifrar_bloque(bloque, subkeys)
+print(de_binario(cifrado).hex().upper())
+# 85E813540F0AB405
 ```
 
-## Tests
+## API pública
 
-```bash
-pytest
-```
+### Capa de mensaje
 
-La suite cubre lo que exige el laboratorio:
+| Función | Firma | Descripción |
+|---|---|---|
+| `cifrar_mensaje` | `(texto: str, key: str) -> bytes` | Aplica padding y cifra el mensaje completo en ECB. |
+| `descifrar_mensaje` | `(cifrado: bytes, key: str) -> str` | Descifra, valida y quita el padding. |
 
-- Vector conocido en ambas direcciones
-- Round keys k1 y k16
-- Round trip con 20 bloques aleatorios más casos límite
-- Efecto avalancha al cambiar un bit del plaintext y un bit efectivo de la key
-- Rechazo de keys y bloques de 7 y 9 bytes
-- Convención de bits: varios tests fallan si el bit 1 se interpreta como LSB
+### Capa de bloque
 
-## Convención de bits
+| Función | Firma | Descripción |
+|---|---|---|
+| `generar_subkeys` | `(key_bytes: bytes) -> list[str]` | Key de 8 bytes → 16 subkeys de 48 bits. |
+| `cifrar_bloque` | `(bloque: str, subkeys: list[str]) -> str` | Cifra un bloque de 64 bits. |
+| `descifrar_bloque` | `(bloque: str, subkeys: list[str]) -> str` | Descifra un bloque de 64 bits. |
 
-**El bit 1 del estándar es el más significativo.** Un bloque de 8 bytes se
-convierte a entero con `int.from_bytes(datos, "big")`, y el bit numerado `p` en
-las tablas ocupa el desplazamiento `input_width - p`:
+### Padding y conversiones
 
-```python
-bit = (value >> (input_width - pos)) & 1
-```
-
-Interpretar el bit 1 como LSB produciría un cifrado internamente consistente
-—cifra y descifra sin error— pero incompatible con el estándar y con cualquier
-otra implementación de DES. El vector conocido no coincidiría. La suite incluye
-tests específicos para esta convención.
-
-El estado interno son enteros de Python; las cadenas de `'0'` y `'1'` solo
-aparecen en los tests, para hacer legibles algunos casos.
+| Función | Firma | Descripción |
+|---|---|---|
+| `aplicar_padding` | `(datos: bytes) -> bytes` | PKCS#5 hasta el siguiente múltiplo de 8 bytes. |
+| `quitar_padding` | `(datos: bytes) -> bytes` | Quita y valida el padding. |
+| `a_binario` | `(datos: bytes) -> str` | Bytes → cadena de `'0'` y `'1'`. |
+| `de_binario` | `(cadena: str) -> bytes` | Cadena de bits → bytes. |
+| `a_bloques` | `(cadena: str) -> list[str]` | Parte una cadena de bits en bloques de 64. |
+| `de_bloques` | `(bloques: list[str]) -> str` | Une bloques en una sola cadena. |
 
 ## Estructura
 
 ```
-deslib/
-  __init__.py         reexporta la API pública
-  tables.py           tablas del estándar (IP, IP⁻¹, E, P, PC-1, PC-2, S-boxes)
-  permutation.py      permute genérica y rotación circular de 28 bits
-  sboxes.py           sbox_lookup y substitute
-  key_schedule.py     des_key_schedule y des_check_parity
-  feistel.py          feistel_f y des_round
-  des_core.py         des_block: IP → 16 rondas → intercambio → IP⁻¹
-  api.py              des_encrypt_block y des_decrypt_block
-tests/
-  test_des.py
+lib_des/
+├── des/
+│   ├── __init__.py      capa de mensaje (padding + ECB)
+│   ├── core.py          permutaciones, key schedule, función f, 16 rondas
+│   ├── tables.py        IP, IP⁻¹, E, P, PC-1, PC-2, rotaciones, S-boxes
+│   └── padding.py       PKCS#5 y conversiones bytes ↔ bits
+├── tests/
+│   ├── test_des.py      test vectors oficiales y propiedades del cifrado
+│   └── test_padding.py  padding, conversiones y round trips
+├── colab_des.ipynb      notebook generado (no editar a mano)
+├── build_colab.py       genera colab_des.ipynb desde des/
+└── reporte-lab1-des.md  reporte del laboratorio
 ```
 
-El núcleo contiene únicamente operaciones criptográficas: no imprime, no lee
-archivos y no pide entrada por teclado.
+## Representación interna
 
-## Notas de implementación
+El estado interno son **cadenas de caracteres `'0'` y `'1'`**, no enteros. Las
+conversiones desde y hacia `bytes` viven en `padding.py` (`a_binario`,
+`de_binario`).
 
-**Una sola rutina de permutación.** `permute` sirve para IP, IP⁻¹, E, P, PC-1 y
-PC-2. La salida mide lo mismo que la tabla, no lo mismo que la entrada, así que
-la misma función permuta (IP, P), reduce (PC-1, PC-2) y expande (E, cuya tabla
-repite 16 posiciones).
+Es una decisión de legibilidad: las permutaciones y el key schedule se leen
+directamente como reordenamientos de posiciones. El costo es rendimiento: cada
+operación de bits recorre la cadena carácter por carácter.
 
-**Cifrar y descifrar comparten el núcleo.** La estructura Feistel es idéntica en
-ambos sentidos; solo cambia el orden de las subkeys (`subkeys[::-1]`). No hace
-falta invertir `f`, que además no es invertible: las S-boxes van de 6 bits a 4 y
-pierden información.
+## Convenciones
 
-**El intercambio final no se omite.** Tras la ronda 16 se concatena `R` antes
-que `L`. Sin ese paso el cifrado parece funcionar pero el descifrado no recupera
-el plaintext.
+- **Tablas en base 1.** Todas las tablas de `tables.py` están transcritas tal
+  como aparecen en FIPS PUB 46-3: la posición 1 es el bit más significativo.
+  `permutar` resta 1 internamente para indexar.
+- **`permutar` sirve para todo.** La salida mide lo mismo que la tabla, no lo
+  mismo que la entrada. Por eso la misma función permuta (IP, P), reduce (PC-1,
+  PC-2) y expande (E, cuya tabla repite posiciones).
+- **Bits de paridad ignorados.** PC-1 descarta los bits 8, 16, …, 64 de la key.
+  La librería no valida ni genera paridad.
 
-**Los bits de paridad no afectan al cifrado.** PC-1 descarta las posiciones 8,
-16, … 64. Dos keys que solo difieran en esos bits producen el mismo ciphertext,
-y hay un test que lo comprueba. `des_check_parity` informa sobre la paridad pero
-no rechaza ninguna key: el estándar no lo exige.
+## Tests
+
+```bash
+pip install pytest
+python -m pytest -q
+```
+
+50 tests. Incluyen los test vectors oficiales de DES:
+
+| Key | Plaintext | Ciphertext |
+|---|---|---|
+| `133457799BBCDFF1` | `0123456789ABCDEF` | `85E813540F0AB405` |
+| `0000000000000000` | `0000000000000000` | `8CA64DE9C1B123A7` |
+| `FFFFFFFFFFFFFFFF` | `FFFFFFFFFFFFFFFF` | `7359B2163E4EDC58` |
+| `0101010101010101` | `95F8A5E5DD31D900` | `8000000000000000` |
+| `7CA110454A1A6E57` | `01A1D6D039776742` | `690F5B0D9A26939B` |
+
+Que estos pasen significa que la implementación es compatible con el estándar y
+con cualquier otra implementación de DES.
+
+## Notebook
+
+`colab_des.ipynb` contiene toda la librería aplanada en un solo notebook, más
+demostraciones de padding, ECB y comportamiento con key incorrecta.
+
+**Se genera automáticamente.** No lo edites a mano: edita `des/` y regenera.
+
+```bash
+python build_colab.py
+```
 
 ## Limitaciones
 
 **DES no es seguro hoy.** La key efectiva es de 56 bits, lo que da un espacio de
-2⁵⁶ ≈ 7,2 × 10¹⁶ claves. En 1998 la EFF recuperó una key por fuerza bruta en 56
-horas con una máquina de US$250.000; en 2006 COPACOBANA lo hizo en unos 6,4 días
-con hardware de US$10.000. La debilidad no está en la estructura Feistel ni en
-las S-boxes, sino en la longitud de la key. Esta implementación es un ejercicio
-didáctico y no debe usarse para proteger información real.
+2⁵⁶ ≈ 7,2 × 10¹⁶ claves. La debilidad no está en la estructura Feistel ni en las
+S-boxes, sino en la longitud de la key.
 
-**Solo opera sobre un bloque.** La librería implementa DES tal como lo define el
-estándar: una función de 64 bits a 64 bits. Cifrar mensajes de longitud
-arbitraria requiere además un padding y un modo de operación (CBC, CTR), que
-quedan fuera del alcance de este laboratorio.
+**Modo ECB.** Los bloques se cifran de forma independiente, así que bloques de
+plaintext idénticos producen ciphertext idéntico y los patrones del mensaje
+sobreviven al cifrado. CBC y CTR quedan fuera del alcance de este laboratorio.
 
 **No se detectan claves débiles.** Existen cuatro keys para las que las 16
 subkeys resultan idénticas, y seis pares semi-débiles. La librería no las
 rechaza.
+
+**El unpadding no es autenticación.** Que el padding sea válido no garantiza que
+la key sea correcta ni que los datos no hayan sido manipulados. Con una key
+incorrecta, `descifrar_mensaje` lanza `ValueError` casi siempre, pero
+aproximadamente 1 de cada 256 veces el padding resulta válido por azar y la
+excepción que sale es `UnicodeDecodeError`.
+
+**La key y el texto se codifican en UTF-8.** Un carácter fuera de ASCII ocupa
+más de un byte, así que una key de 8 caracteres puede no ser una key de 8 bytes.
+La librería no restringe la entrada a ASCII.
 
 ## Referencia
 

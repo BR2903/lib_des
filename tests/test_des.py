@@ -1,9 +1,3 @@
-"""Tests del nucleo DES, validados contra test vectors conocidos.
-
-Correr desde la raiz del proyecto:
-    pytest
-"""
-
 import pytest
 
 from des import (
@@ -140,11 +134,6 @@ def test_key_schedule_rechaza_key_de_otro_tamano():
 
 
 def test_key_schedule_ignora_bits_de_paridad():
-    """Dos keys que solo difieran en los bits de paridad dan las mismas subkeys.
-
-    PC-1 descarta las posiciones 8, 16, ... 64, asi que el ultimo bit de cada
-    byte no interviene en el cifrado.
-    """
     a = bytes([0x13, 0x34, 0x57, 0x79, 0x9B, 0xBC, 0xDF, 0xF1])
     b = bytes([x ^ 0x01 for x in a])   # cambia solo el ultimo bit de cada byte
     assert generar_subkeys(a) == generar_subkeys(b)
@@ -215,18 +204,13 @@ def test_mensaje_cifrado_es_multiplo_de_8_bytes():
 
 
 def test_key_equivocada_es_detectada():
-    """Con la clave incorrecta el padding resultante no valida."""
     cifrado = cifrar_mensaje("mensaje secreto", "holacomo")
     with pytest.raises(ValueError):
         descifrar_mensaje(cifrado, "otrakey1")
 
 
 def test_ecb_bloques_repetidos_dan_ciphertext_repetido():
-    """Limitacion conocida del modo ECB, documentada en el README.
-
-    Este test no comprueba una virtud sino una debilidad: sirve para dejar
-    constancia de que el comportamiento es el esperado y no un error.
-    """
+    
     cifrado = cifrar_mensaje("AAAAAAAA" * 3, "holacomo")
     bloques = [cifrado[i:i + 8] for i in range(0, len(cifrado), 8)]
     assert bloques[0] == bloques[1] == bloques[2]
